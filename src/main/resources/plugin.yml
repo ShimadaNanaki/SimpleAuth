@@ -1,0 +1,20 @@
+name: SimpleAuth
+version: 1.0.0
+main: com.example.simpleauth.SimpleAuth
+api-version: '1.21'
+description: 一定時間内に認証しないプレイヤーをキックします。
+author: you
+
+commands:
+  auth:
+    description: サーバーに認証します。
+    usage: /auth <パスワード>
+  authreload:
+    description: SimpleAuth の設定を再読み込みします。
+    usage: /authreload
+    permission: simpleauth.reload
+
+permissions:
+  simpleauth.reload:
+    description: SimpleAuth の設定を再読み込みできます。
+    default: op
