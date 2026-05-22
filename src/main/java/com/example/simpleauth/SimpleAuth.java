@@ -31,19 +31,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * SimpleAuth - シンプルな認証プラグイン。
- * 参加してから一定時間内に /auth <パスワード> またはチャットでパスワードを
- * 入力しないとキックする。
- * remember-players が true の場合、一度認証したプレイヤーは次回以降自動ログイン。
- */
 public final class SimpleAuth extends JavaPlugin implements Listener {
 
-    // スレッドセーフ（onChat が非同期で動くため）
+    // Thread-safe (onChat runs asynchronously)
     private final Set<UUID> unauthed = ConcurrentHashMap.newKeySet();
     private final Map<UUID, BukkitTask> kickTasks = new ConcurrentHashMap<>();
 
-    // 一度認証済みのプレイヤー（再起動後も保持）
+    // Persisted across restarts
     private final Set<UUID> rememberedPlayers = ConcurrentHashMap.newKeySet();
     private File rememberedFile;
     private YamlConfiguration rememberedConfig;
@@ -51,6 +45,7 @@ public final class SimpleAuth extends JavaPlugin implements Listener {
     private String password;
     private int timeoutSeconds;
     private boolean rememberPlayers;
+    private String language;
 
     @Override
     public void onEnable() {
@@ -58,14 +53,19 @@ public final class SimpleAuth extends JavaPlugin implements Listener {
         loadRememberedPlayers();
         reload();
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("SimpleAuth を有効化しました。 timeout=" + timeoutSeconds + "秒 rememberPlayers=" + rememberPlayers);
+        getLogger().info("SimpleAuth enabled. timeout=" + timeoutSeconds + "s rememberPlayers=" + rememberPlayers + " language=" + language);
     }
 
     private void reload() {
         reloadConfig();
-        password = getConfig().getString("password", "ois");
+        password = getConfig().getString("password", "password");
         timeoutSeconds = getConfig().getInt("timeout-seconds", 30);
         rememberPlayers = getConfig().getBoolean("remember-players", true);
+        language = getConfig().getString("language", "en");
+    }
+
+    private String msg(String en, String ja) {
+        return "ja".equalsIgnoreCase(language) ? ja : en;
     }
 
     private void loadRememberedPlayers() {
@@ -75,7 +75,7 @@ public final class SimpleAuth extends JavaPlugin implements Listener {
                 getDataFolder().mkdirs();
                 rememberedFile.createNewFile();
             } catch (IOException e) {
-                getLogger().warning("authed_players.yml の作成に失敗しました: " + e.getMessage());
+                getLogger().warning("Failed to create authed_players.yml: " + e.getMessage());
             }
         }
         rememberedConfig = YamlConfiguration.loadConfiguration(rememberedFile);
@@ -85,7 +85,7 @@ public final class SimpleAuth extends JavaPlugin implements Listener {
                 rememberedPlayers.add(UUID.fromString(uuidStr));
             } catch (IllegalArgumentException ignored) {}
         }
-        getLogger().info("認証済みプレイヤー " + rememberedPlayers.size() + " 人をロードしました。");
+        getLogger().info("Loaded " + rememberedPlayers.size() + " authenticated player(s).");
     }
 
     private void saveRememberedPlayer(UUID id) {
@@ -98,37 +98,39 @@ public final class SimpleAuth extends JavaPlugin implements Listener {
         try {
             rememberedConfig.save(rememberedFile);
         } catch (IOException e) {
-            getLogger().warning("authed_players.yml の保存に失敗しました: " + e.getMessage());
+            getLogger().warning("Failed to save authed_players.yml: " + e.getMessage());
         }
     }
 
-    // ---------- 参加 / 退出 ----------
+    // ---------- Join / Quit ----------
 
     @EventHandler
     public void onJoin(PlayerJoinEvent e) {
         Player p = e.getPlayer();
         UUID id = p.getUniqueId();
 
-        // 自動ログイン
         if (rememberPlayers && rememberedPlayers.contains(id)) {
-            p.sendMessage("§a✔ 自動ログインしました。ようこそ!");
+            p.sendMessage(msg("§a✔ Auto-login successful. Welcome!", "§a✔ 自動ログインしました。ようこそ!"));
             return;
         }
 
         unauthed.add(id);
 
         p.sendMessage("§6=====================================");
-        p.sendMessage("§e[認証] §f認証が必要です。");
-        p.sendMessage("§e[認証] §c" + timeoutSeconds + "秒§f以内に、");
-        p.sendMessage("§e[認証] §f チャットでパスワードを入力するか");
-        p.sendMessage("§e[認証] §f §a/auth <パスワード>§f と入力してください。");
+        p.sendMessage(msg("§e[Auth] §fAuthentication required.", "§e[認証] §f認証が必要です。"));
+        p.sendMessage(msg("§e[Auth] §fYou have §c" + timeoutSeconds + " seconds§f to authenticate.", "§e[認証] §c" + timeoutSeconds + "秒§f以内に認証してください。"));
+        p.sendMessage(msg("§e[Auth] §fType the password in chat, or", "§e[認証] §fチャットでパスワードを入力するか、"));
+        p.sendMessage(msg("§e[Auth] §fuse §a/auth <password>§f.", "§e[認証] §f§a/auth <パスワード>§f と入力してください。"));
         p.sendMessage("§6=====================================");
 
         BukkitTask task = Bukkit.getScheduler().runTaskLater(this, () -> {
             if (unauthed.contains(id)) {
                 Player still = Bukkit.getPlayer(id);
                 if (still != null && still.isOnline()) {
-                    still.kickPlayer("§c認証時間切れ\n§7時間内にパスワードを入力しませんでした。");
+                    still.kickPlayer(msg(
+                            "§cAuthentication timed out\n§7You did not enter the password in time.",
+                            "§c認証時間切れ\n§7時間内にパスワードを入力しませんでした。"
+                    ));
                 }
             }
         }, timeoutSeconds * 20L);
@@ -144,7 +146,7 @@ public final class SimpleAuth extends JavaPlugin implements Listener {
         if (t != null) t.cancel();
     }
 
-    // ---------- 未認証中の制限 ----------
+    // ---------- Restrictions while unauthenticated ----------
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent e) {
@@ -160,29 +162,23 @@ public final class SimpleAuth extends JavaPlugin implements Listener {
         }
     }
 
-    /**
-     * チャットを認証入力としても受け付ける。
-     * 未認証のプレイヤーのチャットは常にキャンセル（他人には絶対見えない）。
-     * 内容がパスワードと一致したら認証成功扱い。
-     */
     @EventHandler(priority = EventPriority.LOWEST)
     public void onChat(AsyncPlayerChatEvent e) {
         Player player = e.getPlayer();
         UUID id = player.getUniqueId();
         if (!unauthed.contains(id)) return;
 
-        // 未認証のチャットは必ずキャンセル（公開チャットには絶対流れない）
+        // Always cancel unauthenticated chat — never visible to others
         e.setCancelled(true);
 
-        final String msg = e.getMessage().trim();
-        // 認証処理はメインスレッドで実行
+        final String chatMsg = e.getMessage().trim();
         Bukkit.getScheduler().runTask(this, () -> {
             if (!unauthed.contains(id)) return;
-            if (msg.equals(password)) {
+            if (chatMsg.equals(password)) {
                 authenticate(player);
             } else {
-                player.sendMessage("§cまず認証してください。");
-                player.sendMessage("§7チャットでパスワードを入力するか §a/auth <パスワード>§7 と入力。");
+                player.sendMessage(msg("§cAuthentication required.", "§cまず認証してください。"));
+                player.sendMessage(msg("§7Type the password in chat or use §a/auth <password>§7.", "§7チャットでパスワードを入力するか §a/auth <パスワード>§7 と入力。"));
             }
         });
     }
@@ -190,10 +186,10 @@ public final class SimpleAuth extends JavaPlugin implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onPreCommand(PlayerCommandPreprocessEvent e) {
         if (!unauthed.contains(e.getPlayer().getUniqueId())) return;
-        String msg = e.getMessage().toLowerCase(Locale.ROOT);
-        if (!msg.startsWith("/auth")) {
+        String cmdMsg = e.getMessage().toLowerCase(Locale.ROOT);
+        if (!cmdMsg.startsWith("/auth")) {
             e.setCancelled(true);
-            e.getPlayer().sendMessage("§cまず認証してください。 §a/auth <パスワード>");
+            e.getPlayer().sendMessage(msg("§cAuthentication required. Use §a/auth <password>", "§cまず認証してください。 §a/auth <パスワード>"));
         }
     }
 
@@ -219,39 +215,41 @@ public final class SimpleAuth extends JavaPlugin implements Listener {
         }
     }
 
-    // ---------- 認証処理 ----------
+    // ---------- Authentication ----------
 
     private void authenticate(Player p) {
         UUID id = p.getUniqueId();
         if (!unauthed.remove(id)) return;
         BukkitTask t = kickTasks.remove(id);
         if (t != null) t.cancel();
-        p.sendMessage("§a✔ 認証に成功しました。ようこそ!");
-        getLogger().info(p.getName() + " が認証に成功しました。");
+        p.sendMessage(msg("§a✔ Authentication successful. Welcome!", "§a✔ 認証に成功しました。ようこそ!"));
+        getLogger().info(p.getName() + " authenticated successfully.");
         if (rememberPlayers) {
             saveRememberedPlayer(id);
         }
     }
 
-    // ---------- コマンド ----------
+    // ---------- Commands ----------
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (command.getName().equalsIgnoreCase("authreload")) {
             if (!sender.hasPermission("simpleauth.reload")) {
-                sender.sendMessage("§c権限がありません。");
+                sender.sendMessage(msg("§cYou don't have permission.", "§c権限がありません。"));
                 return true;
             }
             reload();
             loadRememberedPlayers();
-            sender.sendMessage("§aSimpleAuth の設定を再読み込みしました。 timeout=" + timeoutSeconds + "秒");
+            sender.sendMessage(msg(
+                    "§aSimpleAuth config reloaded. timeout=" + timeoutSeconds + "s language=" + language,
+                    "§aSimpleAuth の設定を再読み込みしました。 timeout=" + timeoutSeconds + "秒 language=" + language
+            ));
             return true;
         }
 
-        // /authforget - 自分の自動ログイン登録を解除
         if (command.getName().equalsIgnoreCase("authforget")) {
             if (!(sender instanceof Player pf)) {
-                sender.sendMessage("プレイヤー専用コマンドです。");
+                sender.sendMessage(msg("This command is for players only.", "プレイヤー専用コマンドです。"));
                 return true;
             }
             UUID fid = pf.getUniqueId();
@@ -260,36 +258,39 @@ public final class SimpleAuth extends JavaPlugin implements Listener {
                 for (UUID uuid : rememberedPlayers) uuids.add(uuid.toString());
                 rememberedConfig.set("players", uuids);
                 try { rememberedConfig.save(rememberedFile); } catch (IOException ex) {
-                    getLogger().warning("authed_players.yml の保存に失敗しました: " + ex.getMessage());
+                    getLogger().warning("Failed to save authed_players.yml: " + ex.getMessage());
                 }
-                pf.sendMessage("§a自動ログインの登録を解除しました。次回参加時はパスワードが必要です。");
+                pf.sendMessage(msg(
+                        "§aAuto-login removed. You will need to enter the password next time.",
+                        "§a自動ログインの登録を解除しました。次回参加時はパスワードが必要です。"
+                ));
             } else {
-                pf.sendMessage("§7自動ログインには登録されていません。");
+                pf.sendMessage(msg("§7You are not registered for auto-login.", "§7自動ログインには登録されていません。"));
             }
             return true;
         }
 
-        // /auth コマンド
+        // /auth command
         if (!(sender instanceof Player p)) {
-            sender.sendMessage("プレイヤー専用コマンドです。");
+            sender.sendMessage(msg("This command is for players only.", "プレイヤー専用コマンドです。"));
             return true;
         }
         UUID id = p.getUniqueId();
 
         if (!unauthed.contains(id)) {
-            p.sendMessage("§aすでに認証済みです。");
+            p.sendMessage(msg("§aYou are already authenticated.", "§aすでに認証済みです。"));
             return true;
         }
 
         if (args.length != 1) {
-            p.sendMessage("§c使い方: /auth <パスワード>");
+            p.sendMessage(msg("§cUsage: /auth <password>", "§c使い方: /auth <パスワード>"));
             return true;
         }
 
         if (args[0].equals(password)) {
             authenticate(p);
         } else {
-            p.sendMessage("§c✘ パスワードが違います。もう一度入力してください。");
+            p.sendMessage(msg("§c✘ Wrong password. Please try again.", "§c✘ パスワードが違います。もう一度入力してください。"));
         }
         return true;
     }

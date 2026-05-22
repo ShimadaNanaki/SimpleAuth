@@ -1,12 +1,16 @@
-# SimpleAuth 設定ファイル
+# SimpleAuth Configuration
 
-# プレイヤーが入力するパスワード。コマンドは /auth <パスワード> になります。
+# Password players must enter to authenticate. Command: /auth <password>
 password: "password"
 
-# 参加してから認証するまでの猶予時間（秒）。
-# この時間内に /auth <パスワード> を入力しないとキックされます。
+# Time in seconds players have to authenticate after joining.
+# Players who fail to authenticate within this time will be kicked.
 timeout-seconds: 30
 
-# true にすると、一度認証したプレイヤーは次回以降パスワード入力なしで自動ログインします。
-# false にすると毎回パスワードが必要になります。
+# If true, players who have authenticated once will be automatically logged in on future joins.
+# If false, players must enter the password every time.
 remember-players: true
+
+# Language for in-game messages.
+# Options: en (English), ja (Japanese / 日本語)
+language: "en"
