@@ -13,6 +13,9 @@ commands:
     description: SimpleAuth の設定を再読み込みします。
     usage: /authreload
     permission: simpleauth.reload
+  authforget:
+    description: 自分の自動ログイン登録を解除します。次回参加時にパスワードが必要になります。
+    usage: /authforget
 
 permissions:
   simpleauth.reload:
