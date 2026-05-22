@@ -2,22 +2,22 @@ name: SimpleAuth
 version: 1.0.0
 main: com.example.simpleauth.SimpleAuth
 api-version: '1.21'
-description: 一定時間内に認証しないプレイヤーをキックします。
-author: you
+description: Kicks players who fail to authenticate within a set time.
+author: ShimadaNanaki
 
 commands:
   auth:
-    description: サーバーに認証します。
-    usage: /auth <パスワード>
+    description: Authenticate to the server.
+    usage: /auth <password>
   authreload:
-    description: SimpleAuth の設定を再読み込みします。
+    description: Reload SimpleAuth configuration.
     usage: /authreload
     permission: simpleauth.reload
   authforget:
-    description: 自分の自動ログイン登録を解除します。次回参加時にパスワードが必要になります。
+    description: Remove your auto-login registration. You will need to enter the password next time.
     usage: /authforget
 
 permissions:
   simpleauth.reload:
-    description: SimpleAuth の設定を再読み込みできます。
+    description: Allows reloading the SimpleAuth configuration.
     default: op
