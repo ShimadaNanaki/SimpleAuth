@@ -224,6 +224,15 @@ public final class SimpleAuth extends JavaPlugin implements Listener {
         if (t != null) t.cancel();
         p.sendMessage(msg("§a✔ Authentication successful. Welcome!", "§a✔ 認証に成功しました。ようこそ!"));
         getLogger().info(p.getName() + " authenticated successfully.");
+        String opMsg = msg(
+                "§7[SimpleAuth] §a" + p.getName() + " §7authenticated successfully.",
+                "§7[SimpleAuth] §a" + p.getName() + " §7が認証に成功しました。"
+        );
+        for (Player op : Bukkit.getOnlinePlayers()) {
+            if (op.isOp()) {
+                op.sendMessage(opMsg);
+            }
+        }
         if (rememberPlayers) {
             saveRememberedPlayer(id);
         }
